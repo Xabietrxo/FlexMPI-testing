@@ -94,11 +94,13 @@ int main(int argc, char *argv[]) {
             excl_nodes_hint = 0;
             ADM_RegisterSysAttributesInt ("ADM_GLOBAL_HINT_NUM_PROCESS", &procs_hint);
             ADM_RegisterSysAttributesInt ("ADM_GLOBAL_HINT_EXCL_NODES", &excl_nodes_hint);
+            printf("Rank (%d/%d): Iteration:= %d, procs_hint=%d, excl_nodes_hint=%d\n", rank, size, it, procs_hint, excl_nodes_hint);
         } else if ( (it == 6*(itmax/10)) || (it == 8*(itmax/10)) ){
             procs_hint = -2;
             excl_nodes_hint = 0;
             ADM_RegisterSysAttributesInt ("ADM_GLOBAL_HINT_NUM_PROCESS", &procs_hint);
             ADM_RegisterSysAttributesInt ("ADM_GLOBAL_HINT_EXCL_NODES", &excl_nodes_hint);
+            printf("Rank (%d/%d): Iteration:= %d, procs_hint=%d, excl_nodes_hint=%d\n", rank, size, it, procs_hint, excl_nodes_hint);
         }
         
         // update message if new spawned processes
@@ -109,7 +111,7 @@ int main(int argc, char *argv[]) {
 
             if (rank==0)
             {
-                for (int i = 1; i < size; i++)
+                for (int i = 1; i < last_size; i++)
                 {
                     MPI_Recv(&buffer[i], 1, intercalate_type, i, 0, ADM_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
@@ -155,7 +157,8 @@ int main(int argc, char *argv[]) {
     /* ending monitoring service */
     ADM_MonitoringService (ADM_SERVICE_STOP);
 
-    
+    printf("Rank (%d/%d): End of loop \n", rank, size);
+
 //!!!!------HAU ALDATZEKO-------!!!!------------------------(pentsatu nun jarri)------------------------------------------
 /*    if (rank!=0)
     {
