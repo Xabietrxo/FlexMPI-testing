@@ -106,7 +106,7 @@ int main(int argc, char *argv[]) {
         
     // if process is spawned
     } else {
-
+        //Broadcast beste prozesuak geratuz sinkronizatzeko{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
         printf ("Rank(%d/%d): Process spawned\n", world_rank, world_size);
     }
     
@@ -119,10 +119,13 @@ int main(int argc, char *argv[]) {
     /* starting monitoring service */
     ADM_MonitoringService (ADM_SERVICE_START);
 
-    // init last world zize
+    // init last world size
     int last_world_size = world_size;
     int last_it = it;
     bool bidali = false;
+    bool sync = false;
+    int saved_last_world_size = world_size;
+    int ec = 0;
 
     // start loop
     for (; it < itmax; it++)        //All needed iterations to calculate the matrix sum
@@ -130,11 +133,12 @@ int main(int argc, char *argv[]) {
         //Select hints on specific iterations
         int procs_hint = 0;
         int excl_nodes_hint = 0;
-        bidali = false;
+//        bidali = false;
         if ( (it == 2*(itmax/10)) || (it == 4*(itmax/10)) ){
             procs_hint = 2;
             excl_nodes_hint = 0;
-            bidali = true;
+//            bidali = true;
+            sync = true;
             ADM_RegisterSysAttributesInt ("ADM_GLOBAL_HINT_NUM_PROCESS", &procs_hint);
             ADM_RegisterSysAttributesInt ("ADM_GLOBAL_HINT_EXCL_NODES", &excl_nodes_hint);
             printf("Rank (%d/%d): Iteration:= %d, procs_hint=%d, excl_nodes_hint=%d\n", world_rank, world_size, it, procs_hint, excl_nodes_hint);
@@ -158,63 +162,111 @@ int main(int argc, char *argv[]) {
                 MPI_Bcast(matrix1, dim, MPI_INT, 0, ADM_COMM_WORLD);    //Broadcast both matrix
                 MPI_Bcast(matrix2, dim, MPI_INT, 0, ADM_COMM_WORLD);
             }
-
+            saved_last_world_size = last_world_size;    //Laguntzaile bat
             last_world_size = world_size;
+            if (sync == true)
+            {
+                bidali = true;
+            }
+            
         }
+
+        if (bidali == true)
+        {
+            if (sync == false)
+            {
+                MPI_Type_vector(ec, 1, last_world_size, MPI_INT, &intercalate_type);//(it-last_it)/last_world_size-------->ec
+                MPI_Type_commit(&intercalate_type);
+                if (world_rank!=0)
+                {
+                    printf("Rank (%d/%d): Iteration:= %d, ", world_rank, last_world_size, it);
+                    for (int i = world_rank+last_it; i < it; i++)
+                    {
+                        printf("%d ", result[i]);
+                    }
+                    printf("------------%d elements started from: %d\n", ec, last_it+world_rank);//(it-last_it)/last_world_size-------->ec
+
+                    MPI_Send(&result[last_it+world_rank], 1, intercalate_type, 0, 0, ADM_COMM_WORLD);
+                    ec = 0;
+                }
+                if (world_rank==0)
+                {
+                    for (int i = 1; i < last_world_size; i++)
+                    {
+                        MPI_Recv(&result[last_it+i], 1, intercalate_type, i, 0, ADM_COMM_WORLD, MPI_STATUS_IGNORE);
+                    }
+                }
+            }else{
+                MPI_Type_vector(ec, 1, saved_last_world_size, MPI_INT, &intercalate_type);//(it-last_it)/saved_last_world_size-------->ec
+                MPI_Type_commit(&intercalate_type);
+                if (world_rank!=0)
+                {
+                    printf("Rank (%d/%d): Iteration:= %d, ", world_rank, saved_last_world_size, it);
+                    for (int i = world_rank+last_it; i < it; i++)
+                    {
+                        printf("%d ", result[i]);
+                    }
+                    printf("------------%d elements started from: %d\n", ec, last_it+world_rank);//(it-last_it)/saved_last_world_size-------->ec
+
+                    MPI_Send(&result[last_it+world_rank], 1, intercalate_type, 0, 0, ADM_COMM_WORLD);
+                    ec = 0;
+                }
+                if (world_rank==0)
+                {
+                    for (int i = 1; i < saved_last_world_size; i++)
+                    {
+                        MPI_Recv(&result[last_it+i], 1, intercalate_type, i, 0, ADM_COMM_WORLD, MPI_STATUS_IGNORE);
+                    }
+                }
+                sync = false;
+            }
+            
+            last_it = it;
+            bidali = false;
+        }
+        
         
         /* start malelability region */
         ADM_MalleableRegion (ADM_SERVICE_START);
 
+
         if ((it-last_it)%world_size == world_rank)        //Divide workload in processes
         {
             result[it] = matrix1[it] + matrix2[it];
+            ec++;
             printf("Rank (%d/%d): Iteration:= %d, %d + %d = %d\n", world_rank, world_size, it, matrix1[it], matrix2[it], result[it]);
+        }else{
+            printf("Rank (%d/%d): Iteration= %d\n", world_rank, world_size, it);
         }
 
         sleep(1);
 
-        printf("Rank (%d/%d): Iteration= %d\n", world_rank, world_size, it);
+        
 
         // update the iteration value
         ADM_RegisterSysAttributesInt ("ADM_GLOBAL_ITERATION", &it);
 
 
-
-        if (bidali == true)
-        {
-            MPI_Type_vector((it-last_it)/world_size, 1, world_size, MPI_INT, &intercalate_type);
-            MPI_Type_commit(&intercalate_type);
-            if (world_rank!=0)
-            {
-                printf("Rank (%d/%d): Iteration:= %d, ", world_rank, world_size, it);
-                for (int i = world_rank+last_it; i < it; i++)
-                {
-                    printf("%d ", result[i]);
-                }
-                printf("------------%d elements started from: %d\n", (it-last_it)/world_size, last_it+world_rank);
-
-                MPI_Send(&result[last_it+world_rank], 1, intercalate_type, 0, 0, ADM_COMM_WORLD);
-            }
-            if (world_rank==0)
-            {
-                for (int i = 1; i < world_size; i++)
-                {
-                    MPI_Recv(&result[last_it+i], 1, intercalate_type, i, 0, ADM_COMM_WORLD, MPI_STATUS_IGNORE);
-                }
-            }
-            last_it = it;
-        }
+//Hemen zijon bidali berez---------------------------------------------------------------------------------------------------------
+        
         
         // ending malleable region
         int status;
         status = ADM_MalleableRegion (ADM_SERVICE_STOP);
 
         
-        
         if (status == ADM_ACTIVE) {
             // updata rank and size
             MPI_Comm_rank(ADM_COMM_WORLD, &world_rank);
             MPI_Comm_size(ADM_COMM_WORLD, &world_size);
+            //Broadcast iterazio konkretuetan spawneatu diren prozesuekin sinkronizatzeko.{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+/*          if (sync)
+            {
+                MPI_Bcast(matrix1, dim, MPI_INT, 0, ADM_COMM_WORLD);    //Broadcast both matrix
+                MPI_Bcast(matrix2, dim, MPI_INT, 0, ADM_COMM_WORLD);
+                sync = false;
+            }
+*/
         } else {
             
             
